@@ -1,0 +1,13 @@
+lightgbm==4.7.0
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.12.4
+pydantic-core==2.41.5
+pydantic-settings==2.12.0
+joblib==1.5.2
+numpy==2.3.5
+pandas==2.3.3
+scikit-learn==1.7.2
+xgboost==3.4.1
+boto3==1.43.100
+python-dotenv>=1.0.0
