@@ -174,7 +174,7 @@ app = FastAPI(
 @app.get("/", tags=["Root"])
 def read_root():
     return {
-        "message": "Welcome to NexusDemand API — Demand Intelligence & Market Foresight Platform",
+        "message": "Welcome to DemandAura API — Sense the Future of Global Consumer Demand, in Fashion & Beauty, Fitness & Wearables, Nutrition & Diets ",
         "status": "online",
         "documentation": "/docs",
         "health_check": "/health",
