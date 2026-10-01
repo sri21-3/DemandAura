@@ -1,0 +1,112 @@
+name: Scheduled Notebook Pipeline
+
+on:
+  schedule:
+    # Runs at 03:00 AM IST every Monday (09:30 PM UTC on Sunday)
+    - cron: '30 21 * * 0'
+  workflow_dispatch: # Enables manual trigger button in GitHub Actions UI
+
+permissions:
+  contents: write # Enables committing updated notebooks & CSV copies back to repo
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # Safe limit for the ~25 minute execution run
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: app/backend/fastapi/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install papermill jupyter
+          if [ -f app/backend/fastapi/requirements.txt ]; then
+            pip install -r app/backend/fastapi/requirements.txt
+          fi
+
+      - name: Step 1 - Execute Incremental Fetch Notebook
+        working-directory: notebooks
+        env:
+          # TiDB Database Credentials
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          
+          # Cloudflare R2 Credentials
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          echo "Starting incremental_fetch_data.ipynb execution..."
+          papermill incremental_fetch_data.ipynb incremental_fetch_data.ipynb
+
+      - name: Step 2 - Execute Prod Market Segmentation Notebook
+        working-directory: notebooks
+        env:
+          # TiDB Credentials
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          
+          # Cloudflare R2 Credentials
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          
+          # Gemini API Key (Required for Clustering)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "Starting Prod_Market_Segmentation.ipynb execution..."
+          papermill Prod_Market_Segmentation.ipynb Prod_Market_Segmentation.ipynb
+
+      - name: Step 3 - Execute 4-Weeks Market Segmentation Notebook
+        working-directory: notebooks
+        env:
+          # TiDB Credentials
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          
+          # Cloudflare R2 Credentials
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          
+          # Gemini API Key (Required for Clustering)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "Starting 4weeks_market_segmentation.ipynb execution..."
+          papermill 4weeks_market_segmentation.ipynb 4weeks_market_segmentation.ipynb
+
+      - name: Step 4 - Commit and Push Updated Files
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage changed/new files in the notebooks directory
+          git add notebooks/
+
+          if git diff --staged --quiet; then
+            echo "No changes detected to commit."
+          else
+            git commit -m "Automated weekly run: updated fetch, CSVs, and clustering notebooks [skip ci]"
+            git push
+          fi
