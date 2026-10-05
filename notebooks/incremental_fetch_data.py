@@ -10,11 +10,13 @@ import holidays
 import numpy as np
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 from botocore.config import Config
 from dotenv import load_dotenv
 from google.cloud import bigquery
 from pytrends.request import TrendReq
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, URL
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -34,10 +36,38 @@ def get_db_engine():
     if not all([db_host, db_user, db_pass, db_name]):
         raise ValueError("Missing required database environment variables.")
 
-    connection_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-    connect_args = {"ssl": {}} if db_host and "tidbcloud" in db_host else {}
+    connection_url = URL.create(
+        drivername="mysql+pymysql",
+        username=db_user,
+        password=db_pass,
+        host=db_host,
+        port=db_port,
+        database=db_name,
+    )
+
+    connect_args = {}
+    if db_host and "tidbcloud" in db_host:
+        connect_args["ssl"] = {
+            "ssl_verify_cert": True,
+            "ssl_verify_identity": True,
+            "ssl_ca": "/etc/ssl/certs/ca-certificates.crt"
+        }
 
     return create_engine(connection_url, connect_args=connect_args)
+
+def create_pytrends_session():
+    """Builds a requests Session with urllib3 v2 compatible Retry logic."""
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"]  # Replaces deprecated method_whitelist
+    )
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 # ------------------------------------------------------------------
 # R2 Artifact Uploader (Independent Execution)
@@ -164,21 +194,16 @@ def upload_artifacts_to_r2(engine):
 def run_pipeline():
     engine = get_db_engine()
 
-    # 1. Fetch Target Extraction Range (Matching working implementation)
+    # 1. Fetch Target Extraction Range
     query_max_date = text("SELECT MAX(STR_TO_DATE(week_start, '%%Y-%%m-%%d')) AS last_date FROM main;")
-    
     with engine.connect() as connection:
         last_date_df = pd.read_sql(query_max_date, connection)
 
     last_recorded_raw = last_date_df["last_date"].iloc[0]
-
     if pd.isna(last_recorded_raw):
-        last_recorded_date = datetime(2026, 8, 28).date()
-        logging.warning(f"Table 'main' returned no valid dates. Initializing fallback date: {last_recorded_date}")
-    elif isinstance(last_recorded_raw, (pd.Timestamp, datetime)):
-        last_recorded_date = last_recorded_raw.date()
-    else:
-        last_recorded_date = pd.to_datetime(last_recorded_raw).date()
+        raise ValueError("Database table 'main' contains no recorded dates. Ingestion cannot proceed.")
+    
+    last_recorded_date = pd.to_datetime(last_recorded_raw).date()
 
     today = datetime.now().date()
     current_week_start = today - timedelta(days=(today.weekday() + 1) % 7)
@@ -232,7 +257,9 @@ def run_pipeline():
         ],
     }
 
-    pytrends = TrendReq(hl="en-US", tz=360, timeout=(10, 30), retries=3, backoff_factor=2)
+    # Custom session prevents method_whitelist error with urllib3 2.0+
+    session = create_pytrends_session()
+    pytrends = TrendReq(hl="en-US", tz=360, timeout=(10, 30), session=session)
     
     total_expected_batches = len(COUNTRY_MAP) * sum(len(b) for b in EXPANDED_CATEGORY_BATCHES.values())
     failed_batches_count = 0
