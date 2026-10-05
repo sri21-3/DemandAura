@@ -115,7 +115,7 @@ def load_text_from_r2(r2_key: str) -> str:
         return ""
 
 
-# Global in-memory memory caches
+# Global in-memory caches
 ml_artifacts: Dict[str, Any] = {}
 ml_dataframes: Dict[str, pd.DataFrame] = {}
 ml_reports: Dict[str, str] = {}
@@ -171,14 +171,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 @app.get("/", tags=["Root"])
 def read_root():
     return {
-        "message": "Welcome to DemandAura API — Sense the Future of Global Consumer Demand, in Fashion & Beauty, Fitness & Wearables, Nutrition & Diets ",
+        "message": "Welcome to DemandAura API — Sense the Future of Global Consumer Demand, in Fashion & Beauty, Fitness & Wearables, Nutrition & Diets",
         "status": "online",
         "documentation": "/docs",
         "health_check": "/health",
     }
+
 
 @app.get("/health", tags=["Health Check"])
 def health_check():
@@ -465,12 +467,6 @@ def predict_divergence(payload: DivergenceRequest):
     tags=["Predictions"],
     summary="Forecast Multi-Week Search Interest using LightGBM",
 )
-@app.post(
-    "/forecast/search-interest",
-    response_model=ForecastResponse,
-    tags=["Predictions"],
-    summary="Forecast Multi-Week Search Interest using LightGBM",
-)
 def forecast_search_interest(payload: ForecastRequest):
     df_forecast = ml_dataframes.get("df_forecast")
     lgb_model = ml_artifacts.get("lgb_forecast_model")
@@ -499,7 +495,7 @@ def forecast_search_interest(payload: ForecastRequest):
         (col for col in ["date", "timestamp", "dt", "week_start"] if col in filtered_df.columns),
         None,
     )
-    
+
     if date_col:
         filtered_df[date_col] = pd.to_datetime(filtered_df[date_col])
         filtered_df = filtered_df.sort_values(by=date_col, ascending=True)
@@ -521,7 +517,7 @@ def forecast_search_interest(payload: ForecastRequest):
     for step in range(1, 5):
         # Generate future step date
         future_date = latest_date + pd.Timedelta(weeks=step)
-        
+
         # Construct single-row feature DataFrame
         input_row = pd.DataFrame([current_features[feature_list]])
 
@@ -573,6 +569,7 @@ def forecast_search_interest(payload: ForecastRequest):
         target_variable=target_name if isinstance(target_name, str) else "search_interest",
         forecast_points=forecast_points,
     )
+
 
 # ------------------------------------------------------------------
 # 8. Clustering Data & Report Endpoints
