@@ -11,3 +11,6 @@ scikit-learn==1.7.2
 xgboost==3.4.1
 boto3==1.43.100
 python-dotenv>=1.0.0
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+pytrends>=4.9.0
