@@ -14,3 +14,4 @@ python-dotenv>=1.0.0
 sqlalchemy>=2.0.0
 pymysql>=1.1.0
 pytrends>=4.9.0
+google-cloud-bigquery>=3.0.0
