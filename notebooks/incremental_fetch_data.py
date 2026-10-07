@@ -55,20 +55,6 @@ def get_db_engine():
 
     return create_engine(connection_url, connect_args=connect_args)
 
-def create_pytrends_session():
-    """Builds a requests Session with urllib3 v2 compatible Retry logic."""
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "POST"]
-    )
-    session = requests.Session()
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
-
 # ------------------------------------------------------------------
 # R2 Artifact Uploader (Independent Execution)
 # ------------------------------------------------------------------
@@ -194,7 +180,7 @@ def upload_artifacts_to_r2(engine):
 def run_pipeline():
     engine = get_db_engine()
 
-    # 1. Fetch Target Extraction Range (Updated to handle native DATE column cleanly)
+    # 1. Fetch Target Extraction Range
     query_max_date = text("SELECT MAX(week_start) AS last_date FROM main WHERE week_start IS NOT NULL;")
     with engine.connect() as connection:
         last_date_df = pd.read_sql(query_max_date, connection)
@@ -257,8 +243,14 @@ def run_pipeline():
         ],
     }
 
-    session = create_pytrends_session()
-    pytrends = TrendReq(hl="en-US", tz=360, timeout=(10, 30), session=session)
+    # Pass timeout and verify via requests_args (valid TrendReq initialization)
+    pytrends = TrendReq(
+        hl="en-US", 
+        tz=360, 
+        retries=3, 
+        backoff_factor=2, 
+        requests_args={"timeout": (10, 30)}
+    )
     
     total_expected_batches = len(COUNTRY_MAP) * sum(len(b) for b in EXPANDED_CATEGORY_BATCHES.values())
     failed_batches_count = 0
