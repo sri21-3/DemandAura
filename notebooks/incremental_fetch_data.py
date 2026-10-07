@@ -61,7 +61,7 @@ def create_pytrends_session():
         total=3,
         backoff_factor=2,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "POST"]  # Replaces deprecated method_whitelist
+        allowed_methods=["GET", "POST"]
     )
     session = requests.Session()
     adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -194,8 +194,8 @@ def upload_artifacts_to_r2(engine):
 def run_pipeline():
     engine = get_db_engine()
 
-    # 1. Fetch Target Extraction Range
-    query_max_date = text("SELECT MAX(STR_TO_DATE(week_start, '%%Y-%%m-%%d')) AS last_date FROM main;")
+    # 1. Fetch Target Extraction Range (Updated to handle native DATE column cleanly)
+    query_max_date = text("SELECT MAX(week_start) AS last_date FROM main WHERE week_start IS NOT NULL;")
     with engine.connect() as connection:
         last_date_df = pd.read_sql(query_max_date, connection)
 
@@ -257,7 +257,6 @@ def run_pipeline():
         ],
     }
 
-    # Custom session prevents method_whitelist error with urllib3 2.0+
     session = create_pytrends_session()
     pytrends = TrendReq(hl="en-US", tz=360, timeout=(10, 30), session=session)
     
@@ -289,7 +288,7 @@ def run_pipeline():
                                 success = True
                                 break
                     except Exception as e:
-                        logging.warning(f"Attempt {attempt} failed for {country_name} - {cat_name} batch {batch_idx}: {e}")
+                        logging.warning(f"Attempt {attempt} failed for {country_name} {cat_name} batch {batch_idx}: {e}")
                         time.sleep(2 * attempt)
 
                 if not success:
